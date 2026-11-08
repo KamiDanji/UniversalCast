@@ -1,0 +1,22 @@
+{
+  "protocol": "UCP",
+  "version": "1.0",
+  "type": "event",
+  "id": "evt-state-001",
+  "sessionId": "session-demo-001",
+  "seq": 18,
+  "sentAt": "2026-11-08T20:00:01Z",
+  "action": "state.changed",
+  "payload": {
+    "snapshot": {
+      "revision": 42,
+      "status": "playing",
+      "mediaId": "episode-001",
+      "positionMs": 125500,
+      "durationMs": 1420000,
+      "bufferedMs": 160000,
+      "playbackRate": 1.0,
+      "updatedAt": "2026-11-08T20:00:01Z"
+    }
+  }
+}

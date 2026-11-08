@@ -1,0 +1,13 @@
+{
+  "protocol": "UCP",
+  "version": "1.0",
+  "type": "request",
+  "id": "req-seek-001",
+  "sessionId": "session-demo-001",
+  "seq": 7,
+  "sentAt": "2026-11-08T20:00:00Z",
+  "action": "playback.seek",
+  "payload": {
+    "positionMs": 125000
+  }
+}

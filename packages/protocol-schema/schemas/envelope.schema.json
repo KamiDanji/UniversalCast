@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://universalcast.dev/schemas/ucp-1.0/envelope.schema.json",
+  "title": "UCP 1.0 Envelope",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "protocol",
+    "version",
+    "type",
+    "id",
+    "sessionId",
+    "seq",
+    "sentAt",
+    "action",
+    "payload"
+  ],
+  "properties": {
+    "protocol": {
+      "const": "UCP"
+    },
+    "version": {
+      "const": "1.0"
+    },
+    "type": {
+      "enum": [
+        "request",
+        "response",
+        "event",
+        "error"
+      ]
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "sessionId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sentAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "payload": {
+      "type": "object"
+    },
+    "replyTo": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    }
+  }
+}
