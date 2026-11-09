@@ -9,7 +9,10 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/protocol.test.ts",
     "test:android-live": "node tests/android-receiver-live.mjs",
-    "test:android-mdns": "node tests/android-mdns-discovery.mjs"
+    "test:android-mdns": "node tests/android-mdns-discovery.mjs",
+    "test:android-wss": "node tests/android-receiver-wss.mjs",
+    "test:android-pairing": "node tests/android-receiver-pairing.mjs",
+    "test:android-pairing-protocol": "node --test tests/android-pairing-protocol.test.mjs"
   },
   "dependencies": {
     "@universalcast/protocol-types": "workspace:*",

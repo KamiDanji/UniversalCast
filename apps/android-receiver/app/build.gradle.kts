@@ -45,6 +45,7 @@ dependencies {
 
     // Lightweight RFC 6455 WebSocket server for the development UCP endpoint.
     implementation("org.java-websocket:Java-WebSocket:1.5.7")
+    implementation("com.google.zxing:core:3.5.3")
 
     testImplementation("junit:junit:4.13.2")
 }

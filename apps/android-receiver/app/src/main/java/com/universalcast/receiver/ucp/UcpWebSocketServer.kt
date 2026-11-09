@@ -2,10 +2,14 @@ package com.universalcast.receiver.ucp
 
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import com.universalcast.receiver.MediaUrlValidator
 import com.universalcast.receiver.playback.PlaybackEngine
 import com.universalcast.receiver.playback.PlaybackLoadRequest
 import com.universalcast.receiver.playback.PlaybackSnapshot
+import com.universalcast.receiver.security.PairingCoordinator
+import com.universalcast.receiver.security.PairedSenderStore
+import com.universalcast.receiver.security.Base64Url
 import org.java_websocket.WebSocket
 import org.java_websocket.server.DefaultSSLWebSocketServerFactory
 import org.java_websocket.server.WebSocketServer
@@ -18,6 +22,7 @@ import java.net.InetSocketAddress
 import java.time.Instant
 import java.util.LinkedHashMap
 import java.util.UUID
+import java.security.SecureRandom
 import javax.net.ssl.SSLContext
 
 /**
@@ -31,12 +36,17 @@ class UcpWebSocketServer(
     private val playback: PlaybackEngine,
     private val onStatus: (String) -> Unit,
     private val port: Int = DEFAULT_PORT,
-    private val tlsContext: SSLContext? = null
+    private val tlsContext: SSLContext? = null,
+    private val pairingCoordinator: PairingCoordinator? = null,
+    private val onPairingProposal: (PairingCoordinator.Proposal) -> Unit = {},
+    private val onPairingCancelled: (String) -> Unit = {}
 ) : WebSocketServer(InetSocketAddress("0.0.0.0", port)) {
 
     companion object {
         const val DEFAULT_PORT = 8765
         const val DEVELOPMENT_TLS_PORT = 8766
+        private const val AUTH_CHALLENGE_TTL_MILLIS = 30_000L
+        private const val MAX_AUTH_ATTEMPTS = 3
         private const val UCP_VERSION = "1.0"
         private const val MAX_MESSAGE_CHARS = 256 * 1024
         private const val MAX_TRACKED_IDS = 1024
@@ -47,9 +57,16 @@ class UcpWebSocketServer(
         var incomingSeq: Long = 0L,
         var outgoingSeq: Long = 0L,
         var handshaken: Boolean = false,
+        var helloRequestId: String? = null,
+        var authNonce: String? = null,
+        var authDeadlineElapsed: Long? = null,
+        var authAttempts: Int = 0,
+        var authenticatedSender: PairedSenderStore.Sender? = null,
         var controlledSessionId: String? = null,
         val seenIds: LinkedHashSet<String> = LinkedHashSet()
     )
+
+    private data class PendingPairingConnection(val conn: WebSocket, val requestId: String)
 
     private data class SessionState(
         val id: String,
@@ -61,6 +78,8 @@ class UcpWebSocketServer(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val clients = LinkedHashMap<WebSocket, ClientState>()
     private val sessions = LinkedHashMap<String, SessionState>()
+    private val pendingPairingConnections = LinkedHashMap<String, PendingPairingConnection>()
+    private val authRandom = SecureRandom()
     private var activeSessionId: String? = null
     private var deferStateEvents = false
     private var deferredSnapshot: PlaybackSnapshot? = null
@@ -74,7 +93,7 @@ class UcpWebSocketServer(
 
     override fun onStart() {
         val scheme = if (tlsContext == null) "ws" else "wss"
-        val mode = if (tlsContext == null) "plaintext" else "TLS 1.2; unauthenticated development mode"
+        val mode = if (tlsContext == null) "plaintext" else "TLS 1.2; pairing and authentication enabled (debug)"
         mainHandler.post { onStatus("UCP $scheme development endpoint ready on port $port ($mode)") }
     }
 
@@ -113,6 +132,12 @@ class UcpWebSocketServer(
                         session.controllerConnectionId = null
                     }
                 }
+            }
+            val interruptedPairings = pendingPairingConnections.filterValues { it.conn == conn }.keys.toList()
+            interruptedPairings.forEach { senderId ->
+                pendingPairingConnections.remove(senderId)
+                runCatching { pairingCoordinator?.reject(senderId) }
+                onPairingCancelled(senderId)
             }
             onStatus("UCP client disconnected • ${clients.size} client(s) remain")
         }
@@ -220,7 +245,11 @@ class UcpWebSocketServer(
                 return
             }
             client.handshaken = true
-            sendResponse(conn, client, "connection.welcome", requestId, null, welcomePayload())
+            if (tlsContext != null && pairingCoordinator != null) {
+                sendAuthenticationChallenge(conn, client, requestId)
+            } else {
+                sendResponse(conn, client, "connection.welcome", requestId, null, welcomePayload())
+            }
             return
         }
 
@@ -229,7 +258,20 @@ class UcpWebSocketServer(
             return
         }
 
+        val secureEndpoint = tlsContext != null && pairingCoordinator != null
+        if (secureEndpoint && client.authenticatedSender == null && action !in setOf("connection.auth.prove", "pairing.request")) {
+            sendError(conn, client, "NOT_PAIRED", "Authenticate a paired sender or complete receiver pairing before using UCP.", requestId)
+            return
+        }
+        if (client.authenticatedSender?.role == PairedSenderStore.Role.OBSERVER &&
+            action !in setOf("connection.ping", "state.snapshot", "session.snapshot")) {
+            sendError(conn, client, "NOT_AUTHORIZED", "Observer role cannot change playback or control sessions.", requestId)
+            return
+        }
+
         when (action) {
+            "connection.auth.prove" -> authenticateConnection(conn, client, requestId, payload)
+            "pairing.request" -> pairingRequest(conn, requestId, payload)
             "connection.ping" -> sendResponse(conn, client, "connection.pong", requestId, null,
                 JSONObject().put("receivedAt", Instant.now().toString()).put("echo", payload))
             "session.create" -> createSession(conn, client, requestId, envelopeSessionId)
@@ -245,6 +287,154 @@ class UcpWebSocketServer(
         }
     }
 
+    private fun sendAuthenticationChallenge(conn: WebSocket, client: ClientState, helloRequestId: String) {
+        val nonce = ByteArray(32).also(authRandom::nextBytes)
+        val nonceText = Base64Url.encode(nonce)
+        val expiresAtElapsed = SystemClock.elapsedRealtime() + AUTH_CHALLENGE_TTL_MILLIS
+        client.helloRequestId = helloRequestId
+        client.authNonce = nonceText
+        client.authDeadlineElapsed = expiresAtElapsed
+        sendEnvelope(conn, client, "event", "connection.auth.challenge", null,
+            JSONObject()
+                .put("receiverId", pairingCoordinator?.stableReceiverId)
+                .put("nonce", nonceText)
+                .put("protocolVersion", UCP_VERSION)
+                .put("expiresInMs", AUTH_CHALLENGE_TTL_MILLIS), null)
+    }
+
+    private fun authenticateConnection(conn: WebSocket, client: ClientState, requestId: String, payload: JSONObject) {
+        val coordinator = pairingCoordinator
+        if (coordinator == null) {
+            sendError(conn, client, "AUTH_UNAVAILABLE", "Sender authentication is unavailable.", requestId)
+            return
+        }
+        if (client.authenticatedSender != null) {
+            sendError(conn, client, "AUTH_CHALLENGE_INVALID", "This connection is already authenticated.", requestId)
+            return
+        }
+        val nonce = client.authNonce
+        if (nonce == null) {
+            client.authAttempts += 1
+            sendError(conn, client, "AUTH_CHALLENGE_INVALID", "No unused authentication challenge is pending.", requestId)
+            if (client.authAttempts >= MAX_AUTH_ATTEMPTS) conn.close(CloseFrame.POLICY_VALIDATION, "Authentication challenge replayed")
+            return
+        }
+        if ((client.authDeadlineElapsed ?: 0L) <= SystemClock.elapsedRealtime()) {
+            client.authNonce = null
+            client.authDeadlineElapsed = null
+            sendError(conn, client, "AUTH_CHALLENGE_EXPIRED", "The authentication challenge expired.", requestId)
+            return
+        }
+        // Consume before processing any proof so a nonce cannot be tried repeatedly.
+        client.authNonce = null
+        client.authDeadlineElapsed = null
+        try {
+            val senderId = payload.getString("senderId")
+            val signatureText = payload.getString("signature")
+            require(signatureText.length <= 96) { "Sender proof is too large." }
+            val knownSender = coordinator.pairedSender(senderId)
+                ?: return sendError(conn, client, "NOT_PAIRED", "This sender is not paired with the receiver.", requestId)
+            val signature = Base64Url.decode(signatureText)
+            require(signature.size in 8..72) { "Sender signature has an invalid length." }
+            val authenticated = runCatching {
+                coordinator.authenticate(senderId, UCP_VERSION, nonce, signature)
+            }.getOrNull() ?: run {
+                client.authAttempts += 1
+                sendError(conn, client, "NOT_AUTHORIZED", "Sender signature did not prove possession of the paired key.", requestId)
+                if (client.authAttempts >= MAX_AUTH_ATTEMPTS) conn.close(CloseFrame.POLICY_VALIDATION, "Authentication failed")
+                return
+            }
+            client.authenticatedSender = authenticated
+            sendResponse(conn, client, "connection.authenticated", requestId, null,
+                JSONObject().put("senderId", authenticated.senderId).put("role", authenticated.role.wireValue))
+            client.helloRequestId?.let { helloId ->
+                sendResponse(conn, client, "connection.welcome", helloId, null, welcomePayload(knownSender))
+                client.helloRequestId = null
+            }
+        } catch (error: Exception) {
+            sendError(conn, client, "INVALID_MESSAGE", error.message ?: "Invalid authentication proof.", requestId)
+        }
+    }
+    fun revokePairedSender(senderId: String): Boolean {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { revokePairedSender(senderId) }
+            return false
+        }
+        val removed = pairingCoordinator?.revoke(senderId) ?: false
+        if (removed) {
+            clients.filterValues { it.authenticatedSender?.senderId == senderId }
+                .keys.toList()
+                .forEach { it.close(CloseFrame.POLICY_VALIDATION, "Sender revoked") }
+        }
+        return removed
+    }
+    private fun pairingRequest(conn: WebSocket, requestId: String, payload: JSONObject) {
+        val coordinator = pairingCoordinator
+        if (tlsContext == null || coordinator == null) {
+            sendError(conn, clients[conn] ?: return, "PAIRING_UNAVAILABLE", "Pairing is available only on the TLS receiver endpoint.", requestId)
+            return
+        }
+        try {
+            val challenge = payload.getString("challenge")
+            val senderId = payload.getString("senderId")
+            val displayName = payload.getString("displayName")
+            val publicKeyText = payload.getString("senderPublicKey")
+            val nonce = payload.getString("senderNonce")
+            val signatureText = payload.getString("signature")
+            require(publicKeyText.length <= 2048 && signatureText.length <= 256) { "Sender proof is too large." }
+            val proposal = coordinator.submit(
+                PairingCoordinator.Request(
+                    challenge = challenge,
+                    senderId = senderId,
+                    displayName = displayName,
+                    publicKey = Base64Url.decode(publicKeyText),
+                    senderNonce = nonce,
+                    signature = Base64Url.decode(signatureText)
+                )
+            )
+            pendingPairingConnections[senderId] = PendingPairingConnection(conn, requestId)
+            val client = clients[conn] ?: return
+            sendResponse(conn, client, "pairing.awaiting_approval", requestId, null,
+                JSONObject().put("senderId", senderId).put("shortAuthenticationString", proposal.shortAuthenticationString))
+            onPairingProposal(proposal)
+        } catch (error: PairingCoordinator.PairingException) {
+            clients[conn]?.let { sendError(conn, it, error.code, error.message ?: "Pairing request rejected.", requestId) }
+        } catch (error: Exception) {
+            clients[conn]?.let { sendError(conn, it, "PAIRING_INVALID_SENDER", error.message ?: "Invalid pairing request.", requestId) }
+        }
+    }
+
+    fun approvePairing(senderId: String, role: PairedSenderStore.Role): Boolean {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { approvePairing(senderId, role) }
+            return false
+        }
+        val connection = pendingPairingConnections.remove(senderId) ?: return false
+        val client = clients[connection.conn] ?: return false
+        return try {
+            val sender = pairingCoordinator?.approve(senderId, role)
+                ?: throw IllegalStateException("Pairing coordinator is unavailable.")
+            sendResponse(connection.conn, client, "pairing.approved", connection.requestId, null,
+                JSONObject().put("senderId", sender.senderId).put("role", sender.role.wireValue)
+                    .put("senderFingerprintSha256", sender.fingerprintSha256))
+            onStatus("Paired ${sender.displayName} as ${sender.role.wireValue} • ${pairingCoordinator.pairedSenders().size} sender(s)")
+            true
+        } catch (error: Exception) {
+            sendError(connection.conn, client, "PAIRING_FAILED", error.message ?: "Pairing could not be saved.", connection.requestId)
+            false
+        }
+    }
+    fun rejectPairing(senderId: String) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { rejectPairing(senderId) }
+            return
+        }
+        val connection = pendingPairingConnections.remove(senderId) ?: return
+        runCatching { pairingCoordinator?.reject(senderId) }
+        clients[connection.conn]?.let {
+            sendError(connection.conn, it, "PAIRING_REJECTED", "Pairing was rejected on the receiver.", connection.requestId)
+        }
+    }
     private fun createSession(conn: WebSocket, client: ClientState, requestId: String, envelopeSessionId: String?) {
         if (envelopeSessionId != null) {
             sendError(conn, client, "INVALID_MESSAGE", "session.create must use sessionId: null.", requestId)
@@ -288,6 +478,16 @@ class UcpWebSocketServer(
     }
 
     private fun sessionSnapshot(conn: WebSocket, client: ClientState, requestId: String, sessionId: String?) {
+        val isObserver = client.authenticatedSender?.role == PairedSenderStore.Role.OBSERVER
+        if (isObserver) {
+            if (sessionId.isNullOrBlank() || sessions[sessionId] == null || sessionId != activeSessionId) {
+                sendError(conn, client, "SESSION_NOT_FOUND", "The requested session does not exist.", requestId)
+                return
+            }
+            sendResponse(conn, client, "session.snapshot", requestId, sessionId,
+                JSONObject().put("sessionId", sessionId).put("snapshot", snapshotJson(playback.snapshot())))
+            return
+        }
         val session = controlledSession(conn, client, requestId, sessionId) ?: return
         sendResponse(conn, client, "session.snapshot", requestId, session.id,
             JSONObject().put("sessionId", session.id).put("snapshot", snapshotJson(playback.snapshot())))
@@ -451,7 +651,7 @@ class UcpWebSocketServer(
         sendEnvelope(conn, client, "event", "state.changed", sessionId, JSONObject().put("snapshot", snapshotJson(snapshot)), null)
     }
 
-    private fun welcomePayload(): JSONObject {
+    private fun welcomePayload(sender: PairedSenderStore.Sender? = null): JSONObject {
         val capabilities = playback.capabilities
         val formats = JSONArray()
         capabilities.mimeTypes.sorted().forEach { formats.put(it) }
@@ -476,7 +676,11 @@ class UcpWebSocketServer(
                     .put("subtitleExternal", false)
                     .put("subtitleSelect", capabilities.supportsSubtitleTrackSelection))
                 .put("volume", JSONObject().put("set", false).put("mute", false)))
-            .put("security", JSONObject().put("mode", "development-unauthenticated-lan").put("authenticated", false))
+            .put("security", JSONObject()
+                .put("mode", if (sender != null) "paired-sender" else "development-unauthenticated-lan")
+                .put("authenticated", sender != null)
+                .put("senderId", sender?.senderId ?: JSONObject.NULL)
+                .put("role", sender?.role?.wireValue ?: JSONObject.NULL))
     }
 
     private fun snapshotJson(snapshot: PlaybackSnapshot): JSONObject = JSONObject()

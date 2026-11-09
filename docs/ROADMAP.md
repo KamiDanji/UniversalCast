@@ -26,7 +26,7 @@
 - [x] M2.1 reusable Media3 playback adapter and UCP playback-state mapping (emulator playback verified).
 - [x] M2.2 development UCP WebSocket control endpoint and protocol dispatcher (Android emulator live test passed).
 - [x] M2.3 Android mDNS/DNS-SD receiver advertisement (Windows/Bonjour emulator discovery verified; physical Android TV LAN verification pending).
-- [ ] M2.4 secure pairing and authenticated control (Keystore identity and debug TLS transport implemented; device pinning validation and pairing/authentication pending).
+- [ ] M2.4 secure pairing and authenticated control (Android debug pairing UI, QR bootstrap, sender trust store, role gates, and WSS auth implemented; cross-platform device validation pending).
 - [ ] M2.5 end-to-end casting from a UniversalCast sender.
 
 ## M3 — Android sender
