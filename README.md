@@ -56,3 +56,8 @@ Do not expose an unauthenticated receiver control port to untrusted networks. Do
 ## Contributing
 
 See `docs/CONTRIBUTING.md`. During Milestone 0, protocol changes should be discussed before implementation so sender and receiver behavior remains interoperable.
+
+
+## Media delivery development tool
+
+M1.5 adds `tools/media-host`, a temporary sender-side HTTP server for explicitly granted local media files, including byte-range requests. See `docs/M1.5-MEDIA-DELIVERY.md`. It is development-only and uses plain HTTP; do not expose it to untrusted networks.

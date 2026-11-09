@@ -59,3 +59,27 @@
 Milestone estimates are planning estimates only. TV manufacturer approval, hardware testing, and platform restrictions can materially affect schedule.
 
 Documentation license: CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/.
+
+
+## M1.3 — Session management
+
+The development receiver implements in-memory session create/join/snapshot/leave, controller lease release on disconnect, and receiver-authoritative idle snapshots. See `docs/M1.3-SESSION-MANAGEMENT.md` for limitations and test commands.
+
+## M1.4 — Playback state management
+- [x] Media descriptor validation and load-state snapshot.
+- [x] Play, pause, seek and stop state transitions.
+- [x] Monotonic snapshot revisions and `state.changed` events.
+- [x] Controller authorization and invalid-transition rejection.
+- [x] Automated and live WebSocket playback tests.
+- [ ] Real media-engine integration (future receiver milestone).
+
+
+## M1.5 — Media delivery foundations
+
+- Sender-side temporary HTTP host for explicitly approved local files.
+- Single byte-range support (`206`), `HEAD`, MIME detection and short-lived per-file bearer grants.
+- `media.load` descriptors for local/remote delivery, expiry, HLS/DASH/progressive source types, technical metadata, audio tracks and subtitle tracks.
+- Remote URL DNS policy primitive; production fetching still requires DNS pinning and redirect revalidation.
+- No actual media decoding or HLS segment proxying in the simulator.
+
+See `docs/M1.5-MEDIA-DELIVERY.md`.
