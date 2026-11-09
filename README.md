@@ -6,10 +6,10 @@ The project aims to let sender applications discover, pair with, and control com
 
 ## Project status
 
-- Project phase: Milestone 0 — Foundation
+- Project phase: M2 — Android TV receiver (M2.1 emulator playback verified; M2.2 development UCP WebSocket control implementation prepared for live verification)
 - Protocol: UCP 1.0 Draft
-- Repository status: Initial scaffold
-- First implementation target: Android sender ↔ Android TV receiver
+- Repository status: Protocol simulator, session/playback state, local media host, and M1.6 media-delivery hardening implemented and tested
+- Current receiver target: Native Kotlin + AndroidX Media3 on Android TV / Google TV
 - License: Apache-2.0 for code; CC BY 4.0 for specifications and documentation
 
 > UCP 1.0 is an initial project specification, not an established industry standard. Wire-level details may change before a stable release.
@@ -33,15 +33,15 @@ The project aims to let sender applications discover, pair with, and control com
 - `tests/` — fixtures, conformance, and integration tests.
 - `docs/` — architecture, roadmap, and contribution guidance.
 
-## Initial development order
+## Development status
 
-1. Freeze the UCP 1.0 message envelope and state model.
-2. Implement schema validation and test fixtures.
-3. Build a receiver simulator.
-4. Implement Android TV discovery, pairing, and receiver.
-5. Implement Android sender.
-6. Add direct URL and local HTTP media delivery.
-7. Expand to Windows, iOS, Samsung Tizen, and LG webOS.
+1. UCP 1.0 draft envelope, validation, playback-state model, and conformance fixtures are implemented.
+2. Development receiver simulator supports handshake, sessions, playback commands, and state events.
+3. Sender-side local media host supports temporary grants, HTTP byte ranges, and concurrent clients.
+4. M1.6 automated hardening and live VLC tests have passed on PC and phone.
+5. M2.0/M2.1 Android TV foundation and Media3 playback have passed emulator playback testing.
+6. M2.2 adds a development-only UCP WebSocket control endpoint; live cross-platform verification is pending.
+7. Pairing/authenticated control, mDNS discovery and sender applications remain future work; the Android M2.2 endpoint is also development-only.
 
 ## Licensing
 

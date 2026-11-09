@@ -7,7 +7,9 @@
     "dev": "tsx src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/protocol.test.ts"
+    "test": "tsx --test tests/protocol.test.ts",
+    "test:android-live": "node tests/android-receiver-live.mjs",
+    "test:android-mdns": "node tests/android-mdns-discovery.mjs"
   },
   "dependencies": {
     "@universalcast/protocol-types": "workspace:*",

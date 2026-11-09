@@ -1,35 +1,43 @@
-
 # UniversalCast Roadmap
 
-## M0 — Protocol foundation
-- [ ] Approve UCP 1.0 draft envelope and terminology.
-- [ ] Define message schemas and validation.
-- [ ] Define playback states and transition rules.
-- [ ] Define discovery and pairing flows.
-- [ ] Add conformance fixtures.
-- [ ] Add receiver simulator.
+## M0 — Protocol foundation <badge>Completed in implementation</badge>
 
-## M1 — Discovery and pairing
-- [ ] mDNS/DNS-SD receiver advertisement.
-- [ ] Sender discovery and manual-IP fallback.
-- [ ] QR pairing challenge.
-- [ ] Authenticated control channel.
-- [ ] Credential storage and revocation.
+- [x] UCP 1.0 draft envelope and terminology.
+- [x] Message validation, version negotiation, sequence handling and duplicate request detection.
+- [x] Playback states, transition rules and state revisions.
+- [x] Conformance fixtures and receiver simulator.
 
-## M2 — Android TV receiver
-- [ ] Receiver application shell.
-- [ ] WebSocket server and protocol dispatcher.
-- [ ] Media3 adapter.
-- [ ] Capability advertisement.
-- [ ] State snapshots and events.
+## M1 — Development receiver and media delivery <badge>Verified</badge>
+
+- [x] WebSocket development receiver and mDNS advertisement.
+- [x] Session create/join/snapshot/leave and controller handover.
+- [x] Playback load/play/pause/seek/stop state transitions.
+- [x] Sender-side local HTTP media host with temporary bearer grants.
+- [x] HTTP HEAD and byte-range delivery.
+- [x] Concurrent byte-range requests and interrupted-transfer regression tests.
+- [x] Live VLC playback from PC and phone, including two simultaneous clients.
+- [ ] Production pairing and authenticated control channel — not implemented; remains a security prerequisite.
+
+## M2 — Android TV receiver <badge>In progress</badge>
+
+- [x] M2.0 native Kotlin project foundation.
+- [x] Android TV launcher support and Media3 dependency integration.
+- [x] Development URL playback screen.
+- [x] M2.1 reusable Media3 playback adapter and UCP playback-state mapping (emulator playback verified).
+- [x] M2.2 development UCP WebSocket control endpoint and protocol dispatcher (Android emulator live test passed).
+- [x] M2.3 Android mDNS/DNS-SD receiver advertisement (Windows/Bonjour emulator discovery verified; physical Android TV LAN verification pending).
+- [ ] M2.4 secure pairing and authenticated control (Keystore identity and debug TLS transport implemented; device pinning validation and pairing/authentication pending).
+- [ ] M2.5 end-to-end casting from a UniversalCast sender.
 
 ## M3 — Android sender
-- [ ] Receiver picker.
+
+- [ ] Receiver picker and manual IP fallback.
 - [ ] Pairing UI.
 - [ ] Remote playback controls.
 - [ ] Reconnection and snapshot reconciliation.
 
-## M4 — Media delivery
+## M4 — Media delivery expansion
+
 - [ ] Direct HTTP(S) media.
 - [ ] HLS where supported.
 - [ ] Sender-hosted local HTTP media with Range support.
@@ -38,18 +46,21 @@
 - [ ] Queue and next-episode behavior.
 
 ## M5 — Windows sender
+
 - [ ] Tauri shell.
 - [ ] Discovery, pairing, and control.
 - [ ] Local file casting.
 - [ ] Drag-and-drop and media metadata.
 
 ## M6 — iOS and additional receivers
+
 - [ ] iOS sender.
 - [ ] Samsung Tizen receiver.
 - [ ] LG webOS receiver.
 - [ ] Real-device compatibility matrix.
 
 ## M7 — Production readiness
+
 - [ ] Security review.
 - [ ] Long-session and network fault testing.
 - [ ] TV model compatibility testing.
@@ -59,27 +70,3 @@
 Milestone estimates are planning estimates only. TV manufacturer approval, hardware testing, and platform restrictions can materially affect schedule.
 
 Documentation license: CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/.
-
-
-## M1.3 — Session management
-
-The development receiver implements in-memory session create/join/snapshot/leave, controller lease release on disconnect, and receiver-authoritative idle snapshots. See `docs/M1.3-SESSION-MANAGEMENT.md` for limitations and test commands.
-
-## M1.4 — Playback state management
-- [x] Media descriptor validation and load-state snapshot.
-- [x] Play, pause, seek and stop state transitions.
-- [x] Monotonic snapshot revisions and `state.changed` events.
-- [x] Controller authorization and invalid-transition rejection.
-- [x] Automated and live WebSocket playback tests.
-- [ ] Real media-engine integration (future receiver milestone).
-
-
-## M1.5 — Media delivery foundations
-
-- Sender-side temporary HTTP host for explicitly approved local files.
-- Single byte-range support (`206`), `HEAD`, MIME detection and short-lived per-file bearer grants.
-- `media.load` descriptors for local/remote delivery, expiry, HLS/DASH/progressive source types, technical metadata, audio tracks and subtitle tracks.
-- Remote URL DNS policy primitive; production fetching still requires DNS pinning and redirect revalidation.
-- No actual media decoding or HLS segment proxying in the simulator.
-
-See `docs/M1.5-MEDIA-DELIVERY.md`.

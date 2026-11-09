@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">UniversalCast Receiver</string>
+    <string name="receiver_title">UniversalCast</string>
+    <string name="receiver_subtitle">Your universal media receiver</string>
+    <string name="status_idle">Ready to receive media</string>
+    <string name="url_hint">Enter a media URL (HTTP or HTTPS)</string>
+    <string name="play_test_media">Play media</string>
+</resources>
